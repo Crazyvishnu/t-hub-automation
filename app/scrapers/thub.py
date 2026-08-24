@@ -150,7 +150,7 @@ class THubScraper(EventScraper):
                 event_date=event_date,
                 location=location,
                 price=None,
-                is_free=False,
+                is_free=True,
                 description=description,
             )
         except Exception as exc:
