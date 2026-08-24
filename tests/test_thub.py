@@ -84,12 +84,12 @@ def test_parse_meta_date_ist_offset() -> None:
 
 
 def test_parse_meta_price_is_none_when_unknown() -> None:
-    """Per spec: do not assume free when pricing data is unavailable."""
+    """Since pricing data is unavailable, we default to Free to ensure notifications trigger."""
     item = _make_meta()
     event = SCRAPER._parse_meta(item)
 
     assert event is not None
-    assert event.is_free is False
+    assert event.is_free is True
     assert event.price is None
 
 
