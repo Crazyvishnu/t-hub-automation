@@ -51,7 +51,7 @@ class THubCalendarScraper(EventScraper):
             try:
                 await page.goto(
                     self.events_url,
-                    wait_until="networkidle",
+                    wait_until="domcontentloaded",
                     timeout=self.timeout_seconds * 1000,
                 )
 
@@ -66,9 +66,7 @@ class THubCalendarScraper(EventScraper):
                     logger.error("Could not access iframe content frame")
                     return []
 
-                # Wait for the Zoho calendar container div — this signals that
-                # the Zoho JS has run and injected compMeta into the page.
-                # We wait up to 20s for this div.
+                # Wait for the Zoho calendar container div
                 try:
                     await frame.wait_for_selector(
                         ".zc-calendar-cont",
@@ -78,11 +76,49 @@ class THubCalendarScraper(EventScraper):
                 except Exception:
                     logger.warning("Calendar container not found within timeout, trying anyway...")
 
-                # Get raw iframe HTML and extract the compMeta JSON
+                # Set up a listener for the AJAX responses
+                ajax_responses = []
+                async def handle_response(response):
+                    if "report-embed-json" in response.url:
+                        try:
+                            data = await response.json()
+                            month_events = data.get("MODEL", {}).get("EVENTS", [])
+                            ajax_responses.extend(month_events)
+                        except Exception as e:
+                            logger.error(f"Error parsing AJAX response: {e}")
+                
+                frame.page.on("response", handle_response)
+
+                # Collect events from the first month (already in the DOM)
                 html = await frame.content()
-                logger.info(f"Got iframe HTML ({len(html)} chars), searching for compMeta...")
-                extracted = self._extract_events_from_html(html)
-                events.extend(extracted)
+                events.extend(self._extract_events_from_html(html))
+                logger.info(f"Month 0: extracted {len(events)} events")
+
+                # Navigate to the next 3 months
+                for month_offset in range(1, 4):
+                    try:
+                        next_btn = await frame.query_selector("[title='Next Month']")
+                        if not next_btn:
+                            logger.warning(f"Next Month button not in DOM at offset {month_offset}")
+                            break
+                        
+                        await next_btn.click(force=True)
+                        await frame.wait_for_timeout(4000)  # Wait for AJAX + render
+                        logger.info(f"Navigated to month {month_offset}")
+                        
+                    except Exception as nav_exc:
+                        logger.warning(f"Could not navigate to next month at offset {month_offset}: {nav_exc}")
+                        break
+                
+                # Parse all collected AJAX events
+                parsed_count = 0
+                for raw_event in ajax_responses:
+                    parsed = self._parse_zoho_event(raw_event)
+                    if parsed:
+                        events.append(parsed)
+                        parsed_count += 1
+                logger.info(f"Extracted {parsed_count} events from subsequent months via AJAX")
+
 
             except Exception as exc:
                 logger.error(f"Error scraping {self.source}: {exc!r}")
