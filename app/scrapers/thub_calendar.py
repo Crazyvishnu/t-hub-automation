@@ -164,6 +164,8 @@ class THubCalendarScraper(EventScraper):
                 fields = items[0]
                 accessibility = ""
                 reg_link = ""
+                poc_email = fields.get("zc_POC_Email_unformatted", "")
+                
                 for k, v in fields.items():
                     if isinstance(v, dict):
                         if v.get("name") == "Event_Accesibility":
@@ -174,12 +176,12 @@ class THubCalendarScraper(EventScraper):
                 # Check for direct anchor tags in the value for Registration_Link
                 if reg_link and "<a" in reg_link:
                     import re
-                    match = re.search(r'href=[\'"]?([^\'" >]+)', reg_link)
+                    match = re.search(r'href\s*=\s*[\'"]?([^\'" >]+)', reg_link)
                     if match:
                         reg_link = match.group(1)
                 
                 # Note: Registration_Link in json might be in a different format, just taking string value if not anchor
-                return {"accessibility": accessibility, "registration_link": reg_link}
+                return {"accessibility": accessibility, "registration_link": reg_link, "poc_email": poc_email}
         except Exception as e:
             logger.warning(f"Failed to fetch details for zoho_id {zoho_id}: {e}")
         return {}
@@ -214,6 +216,13 @@ class THubCalendarScraper(EventScraper):
             title = (item.get("title") or "").strip()
             start_str = item.get("start", "")
             description = item.get("description")
+            
+            poc_email = details.get("poc_email")
+            if poc_email:
+                if description:
+                    description = f"{description}\n\nPOC Email: {poc_email}"
+                else:
+                    description = f"POC Email: {poc_email}"
 
             if not zoho_id or not title or not start_str:
                 return None
