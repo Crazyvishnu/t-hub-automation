@@ -9,7 +9,7 @@ from app.config import Settings, get_settings
 from app.database import SupabaseEventRepository
 from app.notifications import TelegramNotifier
 from app.services import EventProcessor
-from app.scrapers import THubScraper
+from app.scrapers import THubScraper, THubCalendarScraper
 from app.utils.logger import configure_logging
 
 settings = get_settings()
@@ -33,7 +33,10 @@ async def run_once(token: str = Query(default=""), runtime: Settings = Depends(g
     repository = SupabaseEventRepository(runtime.supabase_url, runtime.supabase_key, runtime.request_timeout_seconds)
     notifier = TelegramNotifier(runtime.telegram_bot_token, runtime.telegram_chat_id, runtime.request_timeout_seconds) if runtime.telegram_configured else None
     processor = EventProcessor(
-        scrapers=[THubScraper(runtime.thub_events_url, runtime.request_timeout_seconds)],
+        scrapers=[
+            THubScraper(runtime.thub_events_url, runtime.request_timeout_seconds),
+            THubCalendarScraper(timeout_seconds=runtime.request_timeout_seconds)
+        ],
         repository=repository,
         notifier=notifier,
     )

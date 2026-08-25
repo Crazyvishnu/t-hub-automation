@@ -63,6 +63,26 @@ class SupabaseEventRepository:
                     pass
         return new_count
 
+    async def get_existing_fingerprints(self, fingerprints: list[str]) -> dict[str, str]:
+        """Returns a mapping of fingerprint to event_id for existing events."""
+        if not fingerprints:
+            return {}
+        
+        # We can use the 'in' filter: ?event_fingerprint=in.(val1,val2)
+        fps = ",".join(fingerprints)
+        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            response = await client.get(
+                f"{self.base_url}/rest/v1/events",
+                headers=self.headers,
+                params={"event_fingerprint": f"in.({fps})", "select": "event_fingerprint,event_id"},
+            )
+            if response.status_code != 200:
+                logger.warning(f"Could not fetch fingerprints: {response.text}")
+                return {}
+            
+            rows = response.json()
+            return {r["event_fingerprint"]: r["event_id"] for r in rows if r.get("event_fingerprint")}
+
     async def claim_pending_free_events(self, limit: int = 25) -> list[dict]:
         """Atomically claim pending free events via the SQL function."""
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:

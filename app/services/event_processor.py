@@ -49,13 +49,27 @@ class EventProcessor:
             source_start = time.monotonic()
             try:
                 events = await scraper.scrape()
+                
+                # Deduplicate against the database
+                fingerprints = [e.event_fingerprint for e in events if e.event_fingerprint]
+                existing_fingerprints = await self.repository.get_existing_fingerprints(fingerprints)
+                
+                unique_events = []
+                for e in events:
+                    if e.event_fingerprint and e.event_fingerprint in existing_fingerprints:
+                        existing_id = existing_fingerprints[e.event_fingerprint]
+                        if existing_id != e.event_id:
+                            logger.info(f"Filtered cross-source duplicate: {e.title} matches {existing_id}")
+                            continue
+                    unique_events.append(e)
+
                 duration = time.monotonic() - source_start
-                summary.events_found += len(events)
-                new_count = await self.repository.upsert_events(events)
+                summary.events_found += len(unique_events)
+                new_count = await self.repository.upsert_events(unique_events)
                 summary.new_events += new_count
                 logger.info(
-                    "Source %s: %d event(s) scraped, %d new, %.1fs",
-                    scraper.source, len(events), new_count, duration,
+                    "Source %s: %d event(s) scraped, %d unique, %d new, %.1fs",
+                    scraper.source, len(events), len(unique_events), new_count, duration,
                 )
                 # Record success in source_status table.
                 await self.repository.upsert_source_status(

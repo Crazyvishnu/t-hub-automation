@@ -18,6 +18,11 @@ create table if not exists public.events (
   price                    numeric,
   is_free                  boolean     not null default false,
   description              text,
+  event_fingerprint        text,
+  registration_url         text,
+  event_type               text,
+  currency                 text,
+  registration_status      text,
   first_seen               timestamptz not null default now(),
   last_seen                timestamptz not null default now(),
   notified                 boolean     not null default false,
@@ -34,6 +39,7 @@ create index if not exists events_event_date_idx  on public.events (event_date);
 create index if not exists events_first_seen_idx  on public.events (first_seen);
 create index if not exists events_is_free_idx     on public.events (is_free) where is_free;
 create index if not exists events_notified_idx    on public.events (notified) where not notified;
+create index if not exists events_fingerprint_idx on public.events (event_fingerprint);
 
 -- ============================================================
 -- 2. Source health table  (plan §20)
@@ -72,6 +78,8 @@ for each row execute function public.set_event_timestamps();
 -- ============================================================
 -- Claims expire after 15 minutes so a crashed worker never blocks alerts.
 -- FOR UPDATE SKIP LOCKED prevents overlapping /run calls from double-claiming.
+-- Note: We now claim events where is_free = true AND (registration is open OR it was just inserted).
+-- But the processor handles the actual telegram rule checks. We just grab un-notified events.
 create or replace function public.claim_pending_free_events(claim_limit integer default 25)
 returns setof public.events
 language plpgsql
@@ -93,7 +101,7 @@ begin
   ), claimed as (
     update public.events e
     set    notification_claimed_at = now(),
-           updated_at              = now()
+            updated_at              = now()
     from   candidates c
     where  e.id = c.id
     returning e.*

@@ -20,6 +20,11 @@ class Event(BaseModel):
     price: Decimal | None = None
     is_free: bool = False
     description: str | None = None
+    event_fingerprint: str | None = None
+    registration_url: HttpUrl | None = None
+    event_type: str | None = None
+    currency: str | None = None
+    registration_status: str | None = None
 
     @field_validator("event_date", mode="before")
     @classmethod
@@ -38,5 +43,10 @@ class Event(BaseModel):
             "price": float(self.price) if self.price is not None else None,
             "is_free": self.is_free,
             "description": self.description,
+            "event_fingerprint": self.event_fingerprint,
+            "registration_url": str(self.registration_url) if self.registration_url else None,
+            "event_type": self.event_type,
+            "currency": self.currency,
+            "registration_status": self.registration_status,
         }
 

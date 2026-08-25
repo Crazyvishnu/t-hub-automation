@@ -1,10 +1,13 @@
-FROM python:3.11-slim
+FROM mcr.microsoft.com/playwright/python:v1.40.0-jammy
 
 WORKDIR /app
 
 # Install Python dependencies first (layer-cached as long as requirements.txt unchanged).
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Install Playwright browsers (in case the base image needs updates or specific ones)
+RUN playwright install chromium
 
 # Copy application code.
 COPY app ./app

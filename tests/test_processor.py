@@ -41,14 +41,15 @@ def _mock_scraper(events: list[Event], source: str = "T-Hub"):
     return scraper
 
 
-def _mock_repository(new_count: int = 0, pending_rows: list[dict] | None = None):
+def _mock_repository(new_count: int = 0, pending_rows: list[dict] | None = None, consecutive_failures: int = 0):
     repo = MagicMock()
     repo.upsert_events = AsyncMock(return_value=new_count)
     repo.claim_pending_free_events = AsyncMock(return_value=pending_rows or [])
     repo.mark_notified = AsyncMock()
     repo.release_claim = AsyncMock()
     repo.upsert_source_status = AsyncMock()
-    repo.get_consecutive_failures = AsyncMock(return_value=0)
+    repo.get_consecutive_failures = AsyncMock(return_value=consecutive_failures)
+    repo.get_existing_fingerprints = AsyncMock(return_value={})
     return repo
 
 

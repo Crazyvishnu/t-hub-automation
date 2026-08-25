@@ -61,9 +61,20 @@ class TelegramNotifier(Notifier):
         lines.extend([
             "",
             "💰 <b>FREE</b>",
-            "",
-            "🔗 Register:",
-            str(event.url),
+            ""
+        ])
+        
+        if event.registration_status:
+            if event.registration_status.upper() == "OPEN":
+                lines.append("🟢 <b>Registration OPEN</b>")
+            else:
+                lines.append(f"ℹ️ Registration: {event.registration_status}")
+            lines.append("")
+
+        lines.append("🔗 Register:")
+        # Use registration_url if available, else fallback to url
+        lines.append(str(event.registration_url) if event.registration_url else str(event.url))
+        lines.extend([
             "",
             "⚡ Registration may fill quickly.",
         ])

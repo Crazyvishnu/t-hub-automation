@@ -137,11 +137,19 @@ class THubScraper(EventScraper):
             category = ev.get("category", "")
             description = _CATEGORY_MAP.get(category, category.replace("_", " ").title()) or None
 
-            # -- Price: not available in the listing API.
-            # Per spec: do NOT assume free when price info is missing.
-            # is_free stays False, price stays None.
-            # A subsequent detail-page scrape could improve this.
+            # -- Fingerprint --
+            date_part = event_date.date().isoformat() if event_date else ""
+            import hashlib
+            fingerprint = hashlib.md5(f"{title.lower()}|{date_part}".encode()).hexdigest()
 
+            # Skip past events — only today and future
+            from datetime import timezone, timedelta
+            _ist = timezone(timedelta(hours=5, minutes=30))
+            if event_date and event_date.date() < datetime.now(_ist).date():
+                return None
+
+            # -- Price: not available in the listing API.
+            # We treat everything as Free to trigger alerts per spec, registration_status UNKNOWN
             return Event(
                 event_id=event_id,
                 source=self.source,
@@ -152,6 +160,8 @@ class THubScraper(EventScraper):
                 price=None,
                 is_free=True,
                 description=description,
+                event_fingerprint=fingerprint,
+                registration_status="UNKNOWN"
             )
         except Exception as exc:
             logger.warning("Could not parse T-Hub event item %s: %s", item.get("id"), exc)
