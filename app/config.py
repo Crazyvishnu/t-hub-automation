@@ -16,6 +16,14 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
     run_secret: str = ""
+    
+    # OpenWA / WhatsApp Settings
+    openwa_url: str = ""
+    openwa_api_key: str = ""
+    openwa_session_id: str = "default"
+    whatsapp_target_number: str = ""
+    telegram_mode: str = "FALLBACK"
+    
     thub_events_url: str = "https://tevents.t-hub.co/events"
     request_timeout_seconds: float = Field(default=25, gt=0, le=120)
     log_level: str = "INFO"
@@ -27,6 +35,10 @@ class Settings(BaseSettings):
     @property
     def telegram_configured(self) -> bool:
         return bool(self.telegram_bot_token and self.telegram_chat_id)
+        
+    @property
+    def openwa_configured(self) -> bool:
+        return bool(self.openwa_url and self.whatsapp_target_number)
 
 
 @lru_cache

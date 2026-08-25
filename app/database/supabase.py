@@ -161,3 +161,29 @@ class SupabaseEventRepository:
         except Exception:
             logger.warning("Could not read consecutive_failures for %s", source)
         return 0
+
+    async def log_notification(
+        self,
+        event_id: str,
+        channel: str,
+        status: str,
+        attempt_number: int = 1,
+        error_message: str | None = None,
+    ) -> None:
+        """Log a notification attempt into the notification_logs table."""
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+                response = await client.post(
+                    f"{self.base_url}/rest/v1/notification_logs",
+                    headers=self.headers,
+                    json={
+                        "event_id": event_id,
+                        "channel": channel,
+                        "status": status,
+                        "attempt_number": attempt_number,
+                        "error_message": error_message,
+                    },
+                )
+                response.raise_for_status()
+        except Exception as e:
+            logger.warning(f"Could not log notification for {event_id} on {channel}: {e}")

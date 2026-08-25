@@ -7,7 +7,9 @@ from fastapi import Depends, FastAPI, HTTPException, Query, status
 
 from app.config import Settings, get_settings
 from app.database import SupabaseEventRepository
-from app.notifications import TelegramNotifier
+from app.notifications.telegram import TelegramNotifier
+from app.notifications.openwa import OpenWANotifier
+from app.notifications.manager import NotificationManager
 from app.services import EventProcessor
 from app.scrapers import THubScraper, THubCalendarScraper
 from app.utils.logger import configure_logging
@@ -31,7 +33,28 @@ async def run_once(token: str = Query(default=""), runtime: Settings = Depends(g
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Supabase is not configured")
 
     repository = SupabaseEventRepository(runtime.supabase_url, runtime.supabase_key, runtime.request_timeout_seconds)
-    notifier = TelegramNotifier(runtime.telegram_bot_token, runtime.telegram_chat_id, runtime.request_timeout_seconds) if runtime.telegram_configured else None
+    
+    telegram_notifier = TelegramNotifier(
+        runtime.telegram_bot_token, 
+        runtime.telegram_chat_id, 
+        runtime.request_timeout_seconds
+    ) if runtime.telegram_configured else None
+    
+    whatsapp_notifier = OpenWANotifier(
+        base_url=runtime.openwa_url,
+        api_key=runtime.openwa_api_key,
+        session_id=runtime.openwa_session_id,
+        target_number=runtime.whatsapp_target_number,
+        timeout_seconds=runtime.request_timeout_seconds,
+    ) if runtime.openwa_configured else None
+
+    notifier = NotificationManager(
+        repository=repository,
+        primary=whatsapp_notifier,
+        fallback=telegram_notifier,
+        mode=runtime.telegram_mode
+    ) if (whatsapp_notifier or telegram_notifier) else None
+
     processor = EventProcessor(
         scrapers=[
             THubScraper(runtime.thub_events_url, runtime.request_timeout_seconds),

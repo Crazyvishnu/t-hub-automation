@@ -14,6 +14,8 @@ logging.basicConfig(
 from app.config import get_settings
 from app.database import SupabaseEventRepository
 from app.notifications.telegram import TelegramNotifier
+from app.notifications.openwa import OpenWANotifier
+from app.notifications.manager import NotificationManager
 from app.scrapers.thub import THubScraper
 from app.scrapers.thub_calendar import THubCalendarScraper
 from app.services.event_processor import EventProcessor
@@ -24,11 +26,27 @@ async def main():
     repository = SupabaseEventRepository(
         settings.supabase_url, settings.supabase_key, settings.request_timeout_seconds
     )
-    notifier = TelegramNotifier(
+    
+    telegram_notifier = TelegramNotifier(
         settings.telegram_bot_token,
         settings.telegram_chat_id,
         settings.request_timeout_seconds,
     ) if settings.telegram_configured else None
+
+    whatsapp_notifier = OpenWANotifier(
+        base_url=settings.openwa_url,
+        api_key=settings.openwa_api_key,
+        session_id=settings.openwa_session_id,
+        target_number=settings.whatsapp_target_number,
+        timeout_seconds=settings.request_timeout_seconds,
+    ) if settings.openwa_configured else None
+
+    notifier = NotificationManager(
+        repository=repository,
+        primary=whatsapp_notifier,
+        fallback=telegram_notifier,
+        mode=settings.telegram_mode
+    ) if (whatsapp_notifier or telegram_notifier) else None
 
     processor = EventProcessor(
         scrapers=[
