@@ -144,14 +144,14 @@ class EventProcessor:
             if is_redesign or failures >= _FAILURE_ALERT_THRESHOLD:
                 if is_redesign:
                     message = (
-                        f"🚨 <b>CRITICAL: REDESIGN DETECTED</b> 🚨\n\n"
+                        f"🚨 *CRITICAL: REDESIGN DETECTED* 🚨\n\n"
                         f"Source: {source}\n"
                         f"T-Hub has likely redesigned their website or changed their calendar software. The scraper failed to find expected structural elements.\n\n"
                         f"Error: {error[:200]}"
                     )
                 else:
                     message = (
-                        f"⚠️ <b>SCRAPER ERROR</b>\n\n"
+                        f"⚠️ *SCRAPER ERROR*\n\n"
                         f"Source: {source}\n"
                         f"Consecutive failures: {failures}\n"
                         f"Error: {error[:200]}"
