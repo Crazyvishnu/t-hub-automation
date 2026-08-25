@@ -22,7 +22,7 @@ _MAX_PAGES = 5
 _PAGE_SIZE = 15
 
 # Event URL template built from the eventKey field.
-_EVENT_URL_TEMPLATE = "https://tevents.t-hub.co/events/{event_key}"
+_EVENT_URL_TEMPLATE = "https://tevents.t-hub.co/{event_key}"
 
 # Category → human-readable label (for description enrichment, not filtering).
 _CATEGORY_MAP: dict[str, str] = {
