@@ -91,6 +91,8 @@ class THubScraper(EventScraper):
                 response = await client.get(url)
                 response.raise_for_status()
                 data = response.json()
+                if "liveEventMetas" not in data:
+                    raise RuntimeError("REDESIGN_DETECTED: 'liveEventMetas' missing in API response. T-Hub API changed?")
                 metas = data.get("liveEventMetas", [])
                 if not metas:
                     break  # no more pages

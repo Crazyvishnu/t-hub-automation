@@ -134,18 +134,28 @@ class EventProcessor:
         return summary
 
     async def _maybe_alert_admin(self, source: str, error: str) -> None:
-        """Send a Telegram alert when a source has exceeded the failure threshold."""
+        """Send a Telegram alert when a source has exceeded the failure threshold or a redesign is detected."""
         if self.notifier is None:
             return
         try:
             failures = await self.repository.get_consecutive_failures(source)
-            if failures >= _FAILURE_ALERT_THRESHOLD:
-                message = (
-                    f"⚠️ <b>SCRAPER ERROR</b>\n\n"
-                    f"Source: {source}\n"
-                    f"Consecutive failures: {failures}\n"
-                    f"Error: {error[:200]}"
-                )
+            is_redesign = "REDESIGN_DETECTED" in error
+            
+            if is_redesign or failures >= _FAILURE_ALERT_THRESHOLD:
+                if is_redesign:
+                    message = (
+                        f"🚨 <b>CRITICAL: REDESIGN DETECTED</b> 🚨\n\n"
+                        f"Source: {source}\n"
+                        f"T-Hub has likely redesigned their website or changed their calendar software. The scraper failed to find expected structural elements.\n\n"
+                        f"Error: {error[:200]}"
+                    )
+                else:
+                    message = (
+                        f"⚠️ <b>SCRAPER ERROR</b>\n\n"
+                        f"Source: {source}\n"
+                        f"Consecutive failures: {failures}\n"
+                        f"Error: {error[:200]}"
+                    )
                 # Use send_raw if available; otherwise send a synthetic event-like call.
                 if hasattr(self.notifier, "send_raw"):
                     await self.notifier.send_raw(message)

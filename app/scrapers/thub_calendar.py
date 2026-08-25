@@ -56,15 +56,17 @@ class THubCalendarScraper(EventScraper):
                 )
 
                 # Find the Zoho iframe and get its content frame
-                iframe_element = await page.wait_for_selector("iframe.form-iframe", timeout=15000)
+                try:
+                    iframe_element = await page.wait_for_selector("iframe.form-iframe", timeout=15000)
+                except Exception as e:
+                    raise RuntimeError(f"REDESIGN_DETECTED: Zoho calendar iframe not found ({e})")
+                    
                 if not iframe_element:
-                    logger.error("Zoho calendar iframe not found")
-                    return []
+                    raise RuntimeError("REDESIGN_DETECTED: Zoho calendar iframe not found")
 
                 frame = await iframe_element.content_frame()
                 if not frame:
-                    logger.error("Could not access iframe content frame")
-                    return []
+                    raise RuntimeError("REDESIGN_DETECTED: Could not access iframe content frame")
 
                 # Wait for the Zoho calendar container div
                 try:
@@ -192,8 +194,7 @@ class THubCalendarScraper(EventScraper):
         # The compMeta key uses optional whitespace/tabs before the colon.
         match = re.search(r'compMeta\s*:\s*JSON\.parse\("(.*?)"\)', html)
         if not match:
-            logger.warning("compMeta pattern not found in calendar HTML (length=%d)", len(html))
-            return events
+            raise RuntimeError("REDESIGN_DETECTED: compMeta pattern not found in calendar HTML (Calendar software changed?)")
 
         escaped_json = match.group(1)
         try:
