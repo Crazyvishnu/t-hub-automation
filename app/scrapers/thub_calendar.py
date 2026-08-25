@@ -91,8 +91,8 @@ class THubCalendarScraper(EventScraper):
 
                 # Collect events from the first month (already in the DOM)
                 html = await frame.content()
-                events.extend(self._extract_events_from_html(html))
-                logger.info(f"Month 0: extracted {len(events)} events")
+                events_from_html = self._extract_events_from_html(html)
+                logger.info(f"Month 0: extracted {len(events_from_html)} events")
 
                 # Navigate to the next 3 months
                 for month_offset in range(1, 4):
@@ -110,16 +110,40 @@ class THubCalendarScraper(EventScraper):
                         logger.warning(f"Could not navigate to next month at offset {month_offset}: {nav_exc}")
                         break
                 
-                # Parse all collected AJAX events
-                parsed_count = 0
-                for raw_event in ajax_responses:
-                    parsed = self._parse_zoho_event(raw_event)
-                    if parsed:
-                        events.append(parsed)
-                        parsed_count += 1
-                logger.info(f"Extracted {parsed_count} events from subsequent months via AJAX")
-
-
+                import httpx
+                async with httpx.AsyncClient() as client:
+                    # Parse all collected events (compMeta + AJAX)
+                    # wait, before we used events.extend(self._extract_events_from_html(html))
+                    # which we now modified to return list of dicts. So we store it in a variable.
+                    # Wait, in the current file, line 94 is `events.extend(self._extract_events_from_html(html))`.
+                    # I will fix line 94 to use a new variable later.
+                    
+                    all_raw_events = events_from_html + ajax_responses
+                    
+                    # Remove duplicates based on ID before fetching details
+                    seen_ids = set()
+                    unique_raw_events = []
+                    for item in all_raw_events:
+                        zoho_id = item.get("id")
+                        if zoho_id and zoho_id not in seen_ids:
+                            seen_ids.add(zoho_id)
+                            unique_raw_events.append(item)
+                    
+                    parsed_count = 0
+                    for raw_event in unique_raw_events:
+                        zoho_id = raw_event.get("id")
+                        
+                        # Fetch details
+                        details = await self._fetch_event_details(client, zoho_id)
+                        if details.get("accessibility", "").lower() == "closed door":
+                            logger.info(f"Skipping closed door event: {raw_event.get('title')}")
+                            continue
+                            
+                        parsed = self._parse_zoho_event(raw_event, details)
+                        if parsed:
+                            events.append(parsed)
+                            parsed_count += 1
+                    logger.info(f"Extracted and parsed {parsed_count} valid events total")
             except Exception as exc:
                 logger.error(f"Error scraping {self.source}: {exc!r}")
             finally:
@@ -130,8 +154,38 @@ class THubCalendarScraper(EventScraper):
         logger.info(f"{self.source}: {len(events)} events before deduplication")
         return self._deduplicate(events)
 
-    def _extract_events_from_html(self, html: str) -> list[Event]:
-        """Extract events from the compMeta JSON blob embedded in the iframe HTML."""
+    async def _fetch_event_details(self, client: httpx.AsyncClient, zoho_id: str) -> dict:
+        url = f"https://creatorapp.zohopublic.com/thubcat/event-manager/summary-embed/Events_Calendar1/{zoho_id}?privatelink=MeMHuvkHuADwezM5Ftfyx466XMwBuwy3fE2U9w0d1r98JTCxg5HHhWUJMphOPjad46vd1W0812uOvf2Ufy3VnQ3s1d1fWWQAyxbK&parentViewType=2"
+        try:
+            r = await client.get(url, timeout=15.0)
+            data = r.json()
+            items = data.get("MODEL", {}).get("DATAJSONARRAY", [])
+            if items:
+                fields = items[0]
+                accessibility = ""
+                reg_link = ""
+                for k, v in fields.items():
+                    if isinstance(v, dict):
+                        if v.get("name") == "Event_Accesibility":
+                            accessibility = v.get("value", "")
+                        elif v.get("name") == "Registration_Link":
+                            reg_link = v.get("value", "")
+                            
+                # Check for direct anchor tags in the value for Registration_Link
+                if reg_link and "<a" in reg_link:
+                    import re
+                    match = re.search(r'href=[\'"]?([^\'" >]+)', reg_link)
+                    if match:
+                        reg_link = match.group(1)
+                
+                # Note: Registration_Link in json might be in a different format, just taking string value if not anchor
+                return {"accessibility": accessibility, "registration_link": reg_link}
+        except Exception as e:
+            logger.warning(f"Failed to fetch details for zoho_id {zoho_id}: {e}")
+        return {}
+
+    def _extract_events_from_html(self, html: str) -> list[dict]:
+        """Extract raw event dicts from the compMeta JSON blob embedded in the iframe HTML."""
         events = []
         # The compMeta key uses optional whitespace/tabs before the colon.
         match = re.search(r'compMeta\s*:\s*JSON\.parse\("(.*?)"\)', html)
@@ -148,15 +202,13 @@ class THubCalendarScraper(EventScraper):
             logger.info(f"compMeta parsed: {len(zoho_events)} raw events found")
 
             for item in zoho_events:
-                ev = self._parse_zoho_event(item)
-                if ev:
-                    events.append(ev)
+                events.append(item)
         except Exception as exc:
             logger.error(f"Failed to parse compMeta JSON: {exc!r}")
 
         return events
 
-    def _parse_zoho_event(self, item: dict) -> Event | None:
+    def _parse_zoho_event(self, item: dict, details: dict) -> Event | None:
         try:
             zoho_id = item.get("id")
             title = (item.get("title") or "").strip()
@@ -183,11 +235,18 @@ class THubCalendarScraper(EventScraper):
             if event_date and event_date.date() < datetime.now(_IST).date():
                 return None
 
+            # Use registration link if available, otherwise calendar URL
+            reg_link = details.get("registration_link", "")
+            if reg_link and reg_link.startswith("http"):
+                url = reg_link
+            else:
+                url = self.events_url
+
             return Event(
                 event_id=event_id,
                 source=self.source,
                 title=title,
-                url=self.events_url,
+                url=url,
                 event_date=event_date,
                 location="T-Hub Hyderabad",
                 price=None,
