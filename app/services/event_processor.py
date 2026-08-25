@@ -101,8 +101,18 @@ class EventProcessor:
             return summary
 
         try:
-            for row in await self.repository.claim_pending_free_events():
-                event = Event.model_validate(row)
+            pending_rows = await self.repository.claim_pending_free_events()
+            
+            pending_events = []
+            for row in pending_rows:
+                pending_events.append(Event.model_validate(row))
+                
+            # Sort events chronologically (put events with no date at the end)
+            pending_events.sort(
+                key=lambda e: e.event_date.timestamp() if e.event_date else float('inf')
+            )
+            
+            for event in pending_events:
                 try:
                     await self.notifier.send(event)
                     await self.repository.mark_notified(event.event_id)
