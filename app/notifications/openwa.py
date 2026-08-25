@@ -54,11 +54,32 @@ class OpenWANotifier(Notifier):
         if self.api_key:
             headers["X-API-Key"] = self.api_key
         
-        url = f"{self.base_url}/api/sessions/{self.session_id}/messages/send-text"
+        send_url = f"{self.base_url}/api/sessions/{self.session_id}/messages/send-text"
+        start_url = f"{self.base_url}/api/sessions/start"
         
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-            response = await client.post(url, json=payload, headers=headers)
-            response.raise_for_status()
+            try:
+                response = await client.post(send_url, json=payload, headers=headers)
+                response.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                # If we get a 400 Bad Request, the session might be inactive.
+                if e.response.status_code == 400 and "not active" in e.response.text.lower():
+                    logger.info(f"OpenWA session '{self.session_id}' is not active. Attempting to start it...")
+                    # Try to start the session
+                    start_payload = {"sessionId": self.session_id}
+                    start_resp = await client.post(start_url, json=start_payload, headers=headers)
+                    if start_resp.status_code not in (200, 201):
+                        logger.error(f"Failed to start OpenWA session: {start_resp.text}")
+                        raise e # re-raise the original error if start fails
+                    
+                    import asyncio
+                    await asyncio.sleep(2) # Give the worker a moment to boot
+                    
+                    # Retry the message
+                    retry_response = await client.post(send_url, json=payload, headers=headers)
+                    retry_response.raise_for_status()
+                else:
+                    raise e
             
     @staticmethod
     def format_event(event: Event) -> str:
