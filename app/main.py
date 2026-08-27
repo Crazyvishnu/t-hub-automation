@@ -45,14 +45,15 @@ async def run_once(token: str = Query(default=""), runtime: Settings = Depends(g
         api_key=runtime.openwa_api_key,
         session_id=runtime.openwa_session_id,
         target_number=runtime.whatsapp_target_number,
-        timeout_seconds=runtime.request_timeout_seconds,
+        timeout_seconds=runtime.whatsapp_timeout_seconds,  # short dedicated timeout
     ) if runtime.openwa_configured else None
 
     notifier = NotificationManager(
         repository=repository,
         primary=whatsapp_notifier,
         fallback=telegram_notifier,
-        mode=runtime.telegram_mode
+        mode=runtime.telegram_mode,
+        failure_threshold=runtime.openwa_failure_threshold,
     ) if (whatsapp_notifier or telegram_notifier) else None
 
     processor = EventProcessor(

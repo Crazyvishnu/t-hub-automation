@@ -38,14 +38,15 @@ async def main():
         api_key=settings.openwa_api_key,
         session_id=settings.openwa_session_id,
         target_number=settings.whatsapp_target_number,
-        timeout_seconds=settings.request_timeout_seconds,
+        timeout_seconds=settings.whatsapp_timeout_seconds,
     ) if settings.openwa_configured else None
 
     notifier = NotificationManager(
         repository=repository,
         primary=whatsapp_notifier,
         fallback=telegram_notifier,
-        mode=settings.telegram_mode
+        mode=settings.telegram_mode,
+        failure_threshold=settings.openwa_failure_threshold,
     ) if (whatsapp_notifier or telegram_notifier) else None
 
     processor = EventProcessor(

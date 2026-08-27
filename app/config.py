@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     openwa_session_id: str = "default"
     whatsapp_target_number: str = ""
     telegram_mode: str = "FALLBACK"
+    # Separate short timeout for WhatsApp so it never blocks the pipeline (req #10)
+    whatsapp_timeout_seconds: float = Field(default=10, gt=0, le=60)
+    # Circuit breaker: disable WhatsApp after this many consecutive failures (req #15)
+    openwa_failure_threshold: int = Field(default=3, gt=0)
     
     thub_events_url: str = "https://tevents.t-hub.co/events"
     request_timeout_seconds: float = Field(default=25, gt=0, le=120)

@@ -1,115 +1,248 @@
 # T-Hub Event Radar
 
-A highly reliable, automated event monitor for T-Hub. It instantly detects newly published free events from the T-Hub website and calendar, stores them in Supabase to prevent duplicates, and sends beautifully formatted alerts directly to **WhatsApp**.
-
-If WhatsApp is ever disconnected, it gracefully falls back to **Telegram** so you never miss an event!
+Automated monitor for newly published free T-Hub events.  Scrapes the T-Hub
+portal and Zoho Calendar every 5 minutes, stores all events in Supabase (for
+duplicate prevention and history), and sends instant alerts to **WhatsApp**
+via an OpenWA gateway — with automatic **Telegram** fallback if WhatsApp is
+ever unreachable.
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
-```mermaid
-graph TD
-    Cron[cron-job.org<br>Every 5 mins] -->|GET /run| Render[Render Web Service<br>FastAPI API]
-    Render -->|HTTP GET| THub[T-Hub Website & Calendar]
-    THub -->|Raw Events| Processor[Event Normalizer]
-    Processor -->|Upsert| DB[(Supabase PostgreSQL)]
-    DB -->|Fetch Unnotified| Manager[Notification Manager]
-    Manager -->|Primary| WA[OpenWA Gateway<br>WhatsApp Message]
-    Manager -.->|Fallback if WA fails| TG[Telegram Bot API]
+```text
+                  cron-job.org (every 5 min)
+                         │  GET /run?token=…
+                         ▼
+                   Render (FastAPI)
+                         │
+          ┌──────────────┴──────────────┐
+          ▼                             ▼
+  T-Hub Events API             T-Hub Zoho Calendar
+          │                             │
+          └──────────────┬──────────────┘
+                         ▼
+                   Event Processor
+                         │
+                         ▼
+                Supabase PostgreSQL
+                         │
+               qualifying free event
+                         │
+                         ▼
+               Notification Manager
+                         │
+            ┌────────────┴────────────┐
+            ▼                         ▼
+  HeavenCloud OpenWA             Telegram Bot
+   (Baileys engine)               (fallback)
+            │                         ▲
+            │  success                │
+            └────── failure ──────────┘
+                         │
+                         ▼
+                        You
 ```
 
-## 🚀 Step 1: WhatsApp Gateway Setup
+**Key properties:**
+- Render hosts the Python radar (unchanged).
+- HeavenCloud hosts the OpenWA WhatsApp gateway (replacing livemy.app).
+- Supabase holds all event data — never on HeavenCloud.
+- Circuit breaker: after 3 consecutive WhatsApp failures the manager uses
+  Telegram directly until WhatsApp recovers.
 
-Because WhatsApp requires a real phone session, we use the lightweight **OpenWA** gateway (`rmyndharis/openwa`).
+---
 
-1. Deploy the OpenWA Docker container to a server (e.g. `livemy.app` or a VPS).
-2. Go to the deployed OpenWA Dashboard URL.
-3. Under **Sessions**, click **New Session**, name it (e.g., `t-hub-bot`), and scan the **QR Code** with your phone's WhatsApp.
-4. Go to **API Keys** and generate a new API key.
-5. Save the Dashboard URL, the Session ID (UUID), and the API Key for the next step.
-
-## 🛠️ Step 2: Database Setup
-
-1. Create a free project at [supabase.com](https://supabase.com).
-2. Open the **SQL Editor** in Supabase and paste the contents of `database/schema.sql`.
-3. Run the query. This creates the `events`, `source_status`, and `notification_logs` tables.
-4. Go to **Project Settings -> API** and copy your `Project URL` and `service_role` secret key.
-
-## ⚙️ Step 3: Local Configuration
-
-Clone this repository and configure your environment variables:
+## Quick-start (local testing)
 
 ```powershell
-Copy-Item .env.example .env
-```
-
-Edit the `.env` file and fill in the details:
-```ini
-# Supabase
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_KEY=your_service_role_key
-
-# Telegram Fallback
-TELEGRAM_BOT_TOKEN=your_bot_token_from_botfather
-TELEGRAM_CHAT_ID=your_chat_id
-TELEGRAM_MODE=FALLBACK
-
-# Security
-RUN_SECRET=a_long_random_password
-
-# WhatsApp Primary
-OPENWA_URL=http://your-openwa-dashboard.com
-OPENWA_API_KEY=your_openwa_api_key
-OPENWA_SESSION_ID=your_session_uuid
-WHATSAPP_TARGET_NUMBER=919876543210
-```
-
-*Note: `WHATSAPP_TARGET_NUMBER` should just be your country code and phone number without the `+` sign.*
-
-### Run Locally (Testing)
-```powershell
-# Install dependencies
+Copy-Item .env.example .env   # fill in your values
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-
-# Run the scrapers manually
-python run_local.py
+python run_local.py            # one full scrape + notify cycle
 ```
-
-## ☁️ Step 4: Deploy to Render (Production)
-
-1. Push this code to a private GitHub repository.
-2. In [Render](https://render.com), create a new **Web Service** → **Build and deploy from a Git repository**.
-3. Choose the **Docker** environment.
-4. Under **Environment Variables**, paste all the variables from your local `.env` file.
-5. Deploy!
-
-Once deployed, test your API is live:
-```
-https://YOUR-APP.onrender.com/health
-```
-
-## ⏱️ Step 5: Automation (Cron)
-
-Render spins down free web services when they aren't used. To keep it alive and check for events automatically:
-
-1. Go to [cron-job.org](https://cron-job.org) (it's free).
-2. Create a new cron job that runs **every 5 minutes**.
-3. Set the URL to trigger the radar:
-   ```
-   https://YOUR-APP.onrender.com/run?token=YOUR_RUN_SECRET
-   ```
-   *(Replace `YOUR_RUN_SECRET` with the exact string you put in your `.env` file).*
-
-**You're done!** The radar will now quietly monitor T-Hub 24/7 and message your WhatsApp the instant a new free event is posted.
 
 ---
 
-## 🚨 Self-Healing & Fallbacks
+## Setup guide
 
-- **WhatsApp Sleep Fix**: If the OpenWA server falls asleep, the code automatically catches the 400 error, wakes the session up via the `/start` API, waits 2 seconds, and retries the message.
-- **Telegram Fallback**: If WhatsApp is completely down or your phone is off, the radar will instantly failover and send the alert to your Telegram bot.
-- **Redesign Alerts**: If T-Hub completely changes their website or calendar software, the scrapers will detect the missing structures and send a high-priority `🚨 CRITICAL: REDESIGN DETECTED` message straight to your phone.
-- **Deduplication**: Supabase prevents duplicate alerts even if the cron job accidentally fires twice at the exact same second.
+### Step 1 — Supabase database
+
+1. Create a free project at [supabase.com](https://supabase.com).
+2. **SQL Editor → New query** → paste `database/schema.sql` → **Run**.
+3. Go to **Project Settings → API** and copy:
+   - `Project URL` → `SUPABASE_URL`
+   - `service_role` secret key → `SUPABASE_KEY`
+
+### Step 2 — Telegram bot (fallback)
+
+1. Open Telegram and message [@BotFather](https://t.me/botfather) → `/newbot`.
+2. Copy the token → `TELEGRAM_BOT_TOKEN`.
+3. Send your bot a message, then visit
+   `https://api.telegram.org/bot<token>/getUpdates` to find your chat ID →
+   `TELEGRAM_CHAT_ID`.
+
+### Step 3 — OpenWA on HeavenCloud (WhatsApp primary)
+
+HeavenCloud free WhatsApp tier: ~715 MB RAM, 1 GB SSD, 75% CPU, 24/7.
+
+> **Use a secondary/burner phone number** — never your primary personal number.
+> WhatsApp's ToS prohibits bots on personal accounts.
+
+#### 3a. Deploy OpenWA
+
+1. Sign up at [heavencloud.app](https://heavencloud.app) (no credit card).
+2. Create a new **WhatsApp** or **Bot** project.
+3. If Docker deployment is available, use the `rmyndharis/openwa` image:
+
+   ```yaml
+   # docker-compose for reference — adapt to HeavenCloud's UI
+   services:
+     openwa:
+       image: rmyndharis/openwa:latest
+       restart: unless-stopped
+       ports:
+         - "2785:2785"
+       environment:
+         ENGINE_TYPE: baileys          # lightweight — no Chromium
+         SESSION_DATA_PATH: /app/data/sessions
+         API_KEY: ${OPENWA_API_KEY}
+       volumes:
+         - openwa_sessions:/app/data/sessions   # PERSISTENT — survives restarts
+
+   volumes:
+     openwa_sessions:
+   ```
+
+4. Set environment variables in HeavenCloud:
+
+   | Variable | Value |
+   |---|---|
+   | `ENGINE_TYPE` | `baileys` |
+   | `SESSION_DATA_PATH` | `/app/data/sessions` |
+   | `API_KEY` | a long random secret you choose |
+
+5. Mount a persistent volume at `/app/data/sessions`.  Without this, every
+   restart requires re-scanning the QR code.
+
+#### 3b. Link WhatsApp
+
+1. Once the container is running, open the HeavenCloud service URL in your browser (the OpenWA dashboard).
+2. Go to **Sessions → + New Session**, name it (e.g. `t-hub-bot`).
+3. Click the session → **QR Code** → scan with your phone's WhatsApp
+   (**Linked Devices → Link a device**).
+4. Go to **API Keys** → generate a key.  Save it as `OPENWA_API_KEY`.
+5. Copy the Session UUID → `OPENWA_SESSION_ID`.
+6. Copy the dashboard base URL → `OPENWA_URL`
+   (e.g. `https://your-app.heavencloud.app`).
+
+#### 3c. Verify persistence (required)
+
+1. Send a test message from the dashboard **Message Tester**.
+2. **Restart** the HeavenCloud container.
+3. Wait ~30 seconds for it to come back up.
+4. Send another test message — you should **not** be asked to scan again.
+5. If re-scan is required: check that the volume is mounted correctly.
+
+### Step 4 — Configure the Python radar
+
+Edit `.env` with all values collected above:
+
+```ini
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=your_service_role_key
+
+TELEGRAM_BOT_TOKEN=your_bot_token
+TELEGRAM_CHAT_ID=your_chat_id
+TELEGRAM_MODE=FALLBACK
+
+RUN_SECRET=a_long_random_string
+
+OPENWA_URL=https://your-app.heavencloud.app
+OPENWA_API_KEY=your_openwa_api_key
+OPENWA_SESSION_ID=your-session-uuid
+WHATSAPP_TARGET_NUMBER=919876543210
+
+# Optional tuning
+WHATSAPP_TIMEOUT_SECONDS=10
+OPENWA_FAILURE_THRESHOLD=3
+```
+
+### Step 5 — Deploy to Render
+
+1. Push the repository to GitHub.
+2. In [Render](https://render.com), create a **Web Service → Docker**.
+3. Copy all variables from your `.env` into Render's **Environment** tab.
+4. Deploy. Verify: `https://YOUR-APP.onrender.com/health` → `{"status":"ok"}`.
+
+### Step 6 — Automate with cron-job.org
+
+1. Create a free account at [cron-job.org](https://cron-job.org).
+2. New cron job → **every 5 minutes** → URL:
+   ```
+   https://YOUR-APP.onrender.com/run?token=YOUR_RUN_SECRET
+   ```
+3. Done. The radar will now silently monitor T-Hub 24/7.
+
+---
+
+## Self-healing behaviour
+
+| Situation | What happens |
+|---|---|
+| OpenWA session sleeping | Code sends `/start`, waits 2 s, retries automatically |
+| WhatsApp fails once | Fallback to Telegram; event logged as `WHATSAPP:ERROR, TELEGRAM:SUCCESS` |
+| WhatsApp fails 3× in a row | Circuit breaker opens — Telegram used directly until WhatsApp recovers |
+| Circuit breaker open, WhatsApp heals | Breaker closes automatically on next successful send |
+| T-Hub redesigns their website | Scraper raises `REDESIGN_DETECTED`; 🚨 alert sent to WhatsApp + Telegram |
+| HeavenCloud restarts container | Session reloads from persistent volume — no re-scan required |
+
+---
+
+## Reconnecting WhatsApp after session loss
+
+If the session is permanently lost (e.g. phone changed, WhatsApp banned the
+session, volume was wiped):
+
+1. Open the HeavenCloud dashboard.
+2. **Sessions → your session → Unlink / Delete**.
+3. Click **+ New Session**, same name.
+4. Scan the new QR code.
+5. Update `OPENWA_SESSION_ID` in Render environment variables if the UUID changed.
+
+---
+
+## Project structure
+
+```
+app/
+├── main.py                       FastAPI app (/health, /run)
+├── config.py                     Settings from environment variables
+├── models/event.py               Source-neutral Event model
+├── scrapers/
+│   ├── thub.py                   T-Hub Events API scraper
+│   └── thub_calendar.py          T-Hub Zoho Calendar scraper
+├── database/supabase.py          Supabase REST client
+├── notifications/
+│   ├── base.py                   Notifier abstract base
+│   ├── openwa.py                 WhatsApp via OpenWA (provider-independent)
+│   ├── telegram.py               Telegram fallback
+│   └── manager.py                Primary→fallback routing + circuit breaker
+└── services/event_processor.py   Orchestrates scrape → upsert → notify
+
+database/schema.sql               Run once in Supabase SQL Editor
+run_local.py                      Local one-shot test run
+Dockerfile                        python:3.11-slim + Playwright (for calendar scraper)
+```
+
+---
+
+## Security notes
+
+- Never commit `.env` to Git (`.gitignore` already excludes it).
+- Use Render's encrypted environment variables in production.
+- The `/run` endpoint requires `RUN_SECRET` — keep it long and random.
+- Use a burner phone number for the OpenWA WhatsApp session.
+- OpenWA dashboard should be password-protected (set `DASHBOARD_USERNAME` /
+  `DASHBOARD_PASSWORD` env vars in HeavenCloud if supported).
