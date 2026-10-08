@@ -5,9 +5,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'dry-run checks sources; test sends one message; run monitors events'
+        description: 'dry-run checks sources; test sends one message; run monitors events; resend replays upcoming events'
         type: choice
-        options: [dry-run, test, run]
+        options: [dry-run, test, run, resend]
         default: dry-run
 permissions:
   contents: write
@@ -29,6 +29,11 @@ jobs:
           python-version: '3.11'
       - name: Test code without credentials
         run: python -m unittest discover -s tests -v
+      - name: Cache Python packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
       - name: Install calendar browser
         if: inputs.mode != 'test'
         run: |
