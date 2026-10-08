@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 from urllib.error import HTTPError
 
-from radar.core import Event, FileState, GitHubState, HTTP, IST, RadarError, Telegram, deliver, notify_source_health, empty_state, parse_date
+from radar.core import Event, FileState, GitHubState, HTTP, IST, RadarError, Telegram, deliver, notify_health, resend, empty_state, parse_date
 from radar.sources import calendar_event_url, calendar_items, collect, parse_calendar, parse_portal, portal
 
 
@@ -28,21 +28,6 @@ class Tests(unittest.TestCase):
 
     def send(self, events, **kwargs):
         return deliver(events, self.store, self.sender, now=self.now, **kwargs)
-
-    def test_source_health_alert_once_and_recovery(self):
-        errors = ['calendar: T-Hub calendar payload changed']
-        self.assertTrue(notify_source_health(self.store, self.sender, errors))
-        self.assertFalse(notify_source_health(self.store, self.sender, errors))
-        self.assertTrue(notify_source_health(self.store, self.sender, []))
-        self.assertFalse(notify_source_health(self.store, self.sender, []))
-        self.assertEqual(self.sender.send.call_count, 2)
-        self.assertEqual(self.store.load()['source_errors'], [])
-
-    def test_source_health_send_failure_does_not_checkpoint(self):
-        self.sender.send.side_effect = RadarError('telegram failed')
-        with self.assertRaises(RadarError):
-            notify_source_health(self.store, self.sender, ['portal: broken'])
-        self.assertEqual(self.store.load(), empty_state())
 
     def test_health_alert_dedup_recovery_and_daily_heartbeat(self):
         error = ['calendar: schema changed']
