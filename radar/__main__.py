@@ -3,7 +3,7 @@ import os
 import sys
 from datetime import datetime
 
-from .core import FileState, GitHubState, IST, RadarError, Telegram, deliver
+from .core import FileState, GitHubState, IST, RadarError, Telegram, deliver, notify_source_health
 from .sources import collect
 
 
@@ -35,6 +35,8 @@ def main():
         else:
             store = FileState(args.state_file) if args.state_file else GitHubState(
                 os.environ.get('GITHUB_REPOSITORY', ''), os.environ.get('GITHUB_TOKEN', ''))
+            # Report scraping failures even if another source still works.
+            notify_source_health(store, sender, errors)
             count = deliver(events, store, sender, free_only=args.free_only)
             print(f'Telegram deliveries accepted and saved: {count}')
         # A partially working source must not hide a broken source.
