@@ -239,3 +239,51 @@ def notify_source_health(store, sender, errors):
     state['source_errors'] = current
     store.save(state)
     return True
+
+
+def notify_health(store, sender, errors, *, now=None):
+    """Persist failure/recovery transitions and a daily successful heartbeat."""
+    now = now or datetime.now(IST)
+    state = store.load()
+    previous = state.get('source_errors', [])
+    if not isinstance(previous, list) or any(not isinstance(x, str) for x in previous):
+        raise RadarError('Invalid source health history')
+    current = sorted(set(errors))
+    today = now.astimezone(IST).date().isoformat()
+    if current != previous:
+        if current:
+            message = ('T-HUB RADAR WARNING: Scraping failed.\\n\\n' +
+                       '\\n'.join('- ' + x[:250] for x in current[:5]) +
+                       '\\n\\nPossible causes: changed HTML/API, network outage, or blocked access. Inspect GitHub Actions logs.')
+        else:
+            message = 'T-HUB RADAR RECOVERED: Event sources are working again.'
+        sender.send(message.replace('\\n', '\n'))
+        state['source_errors'] = current
+        state['health_day'] = today
+        store.save(state)
+        return 'changed'
+    if not current and state.get('health_day') != today:
+        sender.send('T-HUB RADAR HEALTHY: Scraping checks completed successfully today. No new events may be normal.')
+        state['health_day'] = today
+        store.save(state)
+        return 'heartbeat'
+    return None
+
+
+def resend(events, store, sender, *, now=None, limit=10):
+    """Replay upcoming events for manual link checks, preserving delivery history."""
+    now = now or datetime.now(IST)
+    store.load()
+    count = 0
+    seen = set()
+    for event in sorted(events, key=lambda e: e.date):
+        if event.date.astimezone(IST).date() < now.astimezone(IST).date():
+            continue
+        if any(key in seen for key in event.keys):
+            continue
+        if count >= limit:
+            break
+        sender.send(event.message())
+        seen.update(event.keys)
+        count += 1
+    return count

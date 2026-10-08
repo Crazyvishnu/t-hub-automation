@@ -44,6 +44,28 @@ class Tests(unittest.TestCase):
             notify_source_health(self.store, self.sender, ['portal: broken'])
         self.assertEqual(self.store.load(), empty_state())
 
+    def test_health_alert_dedup_recovery_and_daily_heartbeat(self):
+        error = ['calendar: schema changed']
+        self.assertEqual(notify_health(self.store, self.sender, error, now=self.now), 'changed')
+        self.assertIsNone(notify_health(self.store, self.sender, error, now=self.now))
+        self.assertEqual(notify_health(self.store, self.sender, [], now=self.now), 'changed')
+        self.assertIsNone(notify_health(self.store, self.sender, [], now=self.now))
+        self.assertEqual(self.sender.send.call_count, 2)
+
+    def test_health_send_failure_keeps_previous_state(self):
+        self.sender.send.side_effect = RadarError('send failed')
+        with self.assertRaises(RadarError):
+            notify_health(self.store, self.sender, ['portal: failed'], now=self.now)
+        self.assertEqual(self.store.load(), empty_state())
+
+    def test_manual_resend_preserves_history(self):
+        self.assertEqual(self.send([event()]), 1)
+        previous = self.store.load()
+        sender = Mock()
+        self.assertEqual(resend([event(), event()], self.store, sender, now=self.now), 1)
+        self.assertEqual(self.store.load(), previous)
+        self.assertEqual(self.send([event()]), 0)
+
     def test_success_is_persisted_and_not_resent(self):
         self.assertEqual(self.send([event()]), 1)
         self.assertEqual(self.send([event()]), 0)
