@@ -218,3 +218,24 @@ def deliver(events, store, sender, *, now=None, free_only=False, limit=10):
         store.save(state)
         count += 1
     return count
+
+
+def notify_source_health(store, sender, errors):
+    """Alert once per changed source failure; announce recovery without spam."""
+    state = store.load()
+    previous = state.get('source_errors', [])
+    if not isinstance(previous, list) or any(not isinstance(e, str) for e in previous):
+        raise RadarError('Invalid source health history')
+    current = sorted(set(errors))
+    if current == previous:
+        return False
+    if current:
+        message = ('T-HUB RADAR WARNING: Event scraping failed.\n\n'
+                   + '\n'.join('- ' + error[:300] for error in current[:5])
+                   + '\n\nPossible causes: website HTML/design changed, API schema changed, network outage, or access blocked. Check GitHub Actions logs.')
+    else:
+        message = 'T-HUB RADAR RECOVERED: All enabled event sources are scraping successfully again.'
+    sender.send(message)
+    state['source_errors'] = current
+    store.save(state)
+    return True
