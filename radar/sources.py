@@ -98,13 +98,19 @@ async def calendar():
                 raise RadarError('T-Hub calendar iframe unavailable')
             await frame.wait_for_selector('.zc-calendar-cont', state='attached', timeout=30000)
             items = calendar_items(await frame.content())
+            print(f'calendar: initial month contains {len(items)} entries')
+            # Zoho may render a cached month without any network request.
+            # Capture responses when present instead of requiring an XHR.
+            responses = []
+            page.on('response', lambda response: responses.append(response)
+                    if 'report-embed-json' in response.url else None)
             for _ in range(3):
                 button = frame.locator('[title="Next Month"]')
                 if await button.count() == 0:
                     raise RadarError('Calendar next-month control changed')
-                async with page.expect_response(lambda r: 'report-embed-json' in r.url, timeout=20000) as pending:
-                    await button.first.click(force=True)
-                response = await pending.value
+                await button.first.click(force=True)
+                await page.wait_for_timeout(4000)
+            for response in responses:
                 if not response.ok:
                     raise RadarError('Calendar month request failed')
                 body = await response.json()
@@ -112,6 +118,7 @@ async def calendar():
                 if not isinstance(batch, list):
                     raise RadarError('Calendar month response schema changed')
                 items.extend(batch)
+            print(f'calendar: {len(responses)} additional month responses captured')
             unique = {str(item['id']): item for item in items}
             return [parse_calendar(item) for item in unique.values()]
         except RadarError:
