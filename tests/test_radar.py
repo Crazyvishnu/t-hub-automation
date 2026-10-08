@@ -172,6 +172,17 @@ class Tests(unittest.TestCase):
         with self.assertRaises(RadarError):
             calendar_items('<html>changed</html>')
 
+    def test_calendar_nested_model_events(self):
+        items = [{'id': '1', 'title': 'Demo', 'start': '10/09/2026 10:00 AM'}]
+        html = 'compMeta: JSON.parse(' + json.dumps(json.dumps({'MODEL': {'EVENTS': items}})) + ')'
+        self.assertEqual(calendar_items(html), items)
+
+    def test_calendar_unknown_payload_rejected(self):
+        for body in ({'MODEL': {}}, {'EVENTS': 'invalid'}, {'EVENTS': [None]}):
+            html = 'compMeta: JSON.parse(' + json.dumps(json.dumps(body)) + ')'
+            with self.subTest(body=body), self.assertRaises(RadarError):
+                calendar_items(html)
+
     def test_calendar_javascript_hex_escapes(self):
         items = [{'id': '1', 'title': 'AI & Robotics', 'start': '10/09/2026 10:00 AM'}]
         literal = json.dumps(json.dumps({'EVENTS': items}))
