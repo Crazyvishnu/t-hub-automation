@@ -150,6 +150,8 @@ def collect(include_calendar=True):
         try:
             result = fetch()
             print(f'{name}: {len(result)} events parsed')
+            if not result:
+                errors.append(f'{name}: zero events returned; verify source has not changed')
             events.extend(result)
         except RadarError as exc:
             errors.append(f'{name}: {exc}')
