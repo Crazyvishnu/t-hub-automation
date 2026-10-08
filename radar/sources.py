@@ -120,9 +120,14 @@ async def calendar():
             for _ in range(3):
                 button = frame.locator('[title="Next Month"]')
                 if await button.count() == 0:
-                    raise RadarError('Calendar next-month control changed')
-                await button.first.click(force=True)
-                await page.wait_for_timeout(4000)
+                    print('calendar: next-month control unavailable; keeping already parsed events')
+                    break
+                try:
+                    await button.first.click(timeout=8000)
+                    await page.wait_for_timeout(2000)
+                except Exception:
+                    print('calendar: next-month navigation unavailable; keeping already parsed events')
+                    break
             for response in responses:
                 if not response.ok:
                     raise RadarError('Calendar month request failed')
