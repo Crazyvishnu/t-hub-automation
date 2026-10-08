@@ -3,7 +3,7 @@ import os
 import sys
 from datetime import datetime
 
-from .core import FileState, GitHubState, IST, RadarError, Telegram, deliver, notify_health, resend, notify_source_health
+from .core import FileState, GitHubState, IST, RadarError, Telegram, deliver, notify_health, resend
 from .sources import collect
 
 
@@ -35,8 +35,6 @@ def main():
         else:
             store = FileState(args.state_file) if args.state_file else GitHubState(
                 os.environ.get('GITHUB_REPOSITORY', ''), os.environ.get('GITHUB_TOKEN', ''))
-            # Report scraping failures even if another source still works.
-            notify_source_health(store, sender, errors)
             if args.mode == 'run':
                 # Warn on failed sources and recoveries without repeating each run.
                 notify_health(store, sender, errors)
