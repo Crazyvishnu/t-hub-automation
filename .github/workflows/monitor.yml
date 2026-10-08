@@ -1,0 +1,51 @@
+name: T-Hub Radar
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'dry-run checks sources; test sends one message; run monitors events'
+        type: choice
+        options: [dry-run, test, run]
+        default: dry-run
+permissions:
+  contents: write
+concurrency:
+  group: thub-telegram-monitor
+  cancel-in-progress: false
+jobs:
+  monitor:
+    # No paid private-repo usage. Only default-branch code receives secrets.
+    if: github.event.repository.private == false && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Test code without credentials
+        run: python -m unittest discover -s tests -v
+      - name: Install calendar browser
+        if: inputs.mode != 'test'
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements.txt
+          python -m playwright install --with-deps chromium
+      - name: Run monitor
+        env:
+          RADAR_MODE: ${{ inputs.mode || 'run' }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python -m radar --mode "$RADAR_MODE"
+      - name: Run summary
+        if: always()
+        env:
+          RESULT: ${{ job.status }}
+        run: |
+          echo "## T-Hub Radar: $RESULT" >> "$GITHUB_STEP_SUMMARY"
+          echo 'See Run monitor logs for parsed events, accepted deliveries, or actionable errors.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'A green run with 0 deliveries means no eligible unseen events, not a Telegram test.' >> "$GITHUB_STEP_SUMMARY"

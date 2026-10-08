@@ -1,2 +1,0 @@
-"""Hyderabad Event Radar application."""
-
