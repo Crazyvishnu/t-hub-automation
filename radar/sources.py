@@ -3,7 +3,7 @@ import asyncio
 import ast
 import json
 import re
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 from .core import Event, HTTP, RadarError, parse_date
 
@@ -69,6 +69,19 @@ def calendar_items(html):
         raise RadarError('T-Hub calendar payload changed') from None
 
 
+def calendar_event_url(item):
+    """Prefer published per-event URLs; never fabricate a registration URL."""
+    for key in ('viewEventURL', 'eventUrl', 'eventURL', 'registrationUrl', 'registrationURL', 'url', 'link'):
+        value = item.get(key)
+        if not isinstance(value, str):
+            continue
+        value = value.strip()
+        parsed = urlparse(value)
+        if parsed.scheme == 'https' and parsed.hostname and parsed.username is None and parsed.password is None:
+            return value
+    return CALENDAR
+
+
 def parse_calendar(item):
     try:
         title = item['title'].strip()
@@ -77,7 +90,7 @@ def parse_calendar(item):
             raise ValueError()
         # Calendar entries do not establish price or public registration.
         return Event('T-Hub calendar (check access on event page)', identifier,
-                     title, CALENDAR, parse_date(item['start']))
+                     title, calendar_event_url(item), parse_date(item['start']))
     except (KeyError, TypeError, AttributeError, ValueError):
         raise RadarError('T-Hub calendar event schema changed') from None
 
