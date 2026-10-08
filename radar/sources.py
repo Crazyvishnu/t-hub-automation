@@ -1,5 +1,6 @@
 """Public T-Hub sources. Schema changes fail visibly instead of looking empty."""
 import asyncio
+import ast
 import json
 import re
 from urllib.parse import quote
@@ -51,12 +52,20 @@ def calendar_items(html):
     if not match:
         raise RadarError('T-Hub calendar embed changed: compMeta missing')
     try:
-        body = json.loads(json.loads(match.group(1)))
+        # Zoho emits JavaScript hex escapes (e.g. \x5c\x5cx22), which are not
+        # valid JSON string escapes. literal_eval decodes a string only;
+        # it never executes the embedded JavaScript.
+        literal = match.group(1)
+        try:
+            decoded = json.loads(literal)
+        except ValueError:
+            decoded = ast.literal_eval(literal)
+        body = json.loads(decoded)
         events = body['EVENTS']
         if not isinstance(events, list):
             raise ValueError()
         return events
-    except (ValueError, KeyError, TypeError):
+    except (ValueError, KeyError, TypeError, SyntaxError):
         raise RadarError('T-Hub calendar payload changed') from None
 
 

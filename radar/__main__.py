@@ -1,8 +1,9 @@
 import argparse
 import os
 import sys
+from datetime import datetime
 
-from .core import FileState, GitHubState, RadarError, Telegram, deliver
+from .core import FileState, GitHubState, IST, RadarError, Telegram, deliver
 from .sources import collect
 
 
@@ -27,7 +28,9 @@ def main():
             print('ERROR: ' + error, file=sys.stderr)
         if args.mode == 'dry-run':
             print(f'Dry run: {len(events)} parsed events; no messages sent or state changed.')
-            for event in events[:5]:
+            upcoming = [e for e in events if e.date.astimezone(IST).date() >= datetime.now(IST).date()]
+            print(f'Upcoming events: {len(upcoming)}')
+            for event in upcoming[:5]:
                 print(event.message() + '\n---')
         else:
             store = FileState(args.state_file) if args.state_file else GitHubState(

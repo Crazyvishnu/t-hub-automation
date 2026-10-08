@@ -172,6 +172,12 @@ class Tests(unittest.TestCase):
         with self.assertRaises(RadarError):
             calendar_items('<html>changed</html>')
 
+    def test_calendar_javascript_hex_escapes(self):
+        items = [{'id': '1', 'title': 'AI & Robotics', 'start': '10/09/2026 10:00 AM'}]
+        literal = json.dumps(json.dumps({'EVENTS': items}))
+        literal = literal.replace(r'\"', r'\x22')
+        self.assertEqual(calendar_items('compMeta: JSON.parse(' + literal + ')'), items)
+
     @patch('radar.sources.portal', side_effect=RadarError('schema changed'))
     def test_source_failure_is_visible(self, fetch):
         events, errors = collect(False)
