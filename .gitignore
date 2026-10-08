@@ -4,3 +4,7 @@ __pycache__/
 *.pyc
 state.json
 state.tmp
+
+# Local testing state and credentials
+local-state.json
+local-state.tmp
