@@ -61,8 +61,14 @@ def calendar_items(html):
         except ValueError:
             decoded = ast.literal_eval(literal)
         body = json.loads(decoded)
-        events = body['EVENTS']
-        if not isinstance(events, list):
+        # Zoho embeds both flat EVENTS and newer MODEL.EVENTS payloads.
+        # Reject unknown shapes instead of silently reporting zero events.
+        if not isinstance(body, dict):
+            raise ValueError()
+        events = body.get('EVENTS')
+        if events is None and isinstance(body.get('MODEL'), dict):
+            events = body['MODEL'].get('EVENTS')
+        if not isinstance(events, list) or any(not isinstance(item, dict) for item in events):
             raise ValueError()
         return events
     except (ValueError, KeyError, TypeError, SyntaxError):
@@ -114,8 +120,11 @@ async def calendar():
                 if not response.ok:
                     raise RadarError('Calendar month request failed')
                 body = await response.json()
-                batch = body.get('MODEL', {}).get('EVENTS')
-                if not isinstance(batch, list):
+                model = body.get('MODEL') if isinstance(body, dict) else None
+                batch = model.get('EVENTS') if isinstance(model, dict) else None
+                if batch is None and isinstance(body, dict):
+                    batch = body.get('EVENTS')
+                if not isinstance(batch, list) or any(not isinstance(item, dict) for item in batch):
                     raise RadarError('Calendar month response schema changed')
                 items.extend(batch)
             print(f'calendar: {len(responses)} additional month responses captured')
