@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 from urllib.error import HTTPError
 
 from radar.core import Event, FileState, GitHubState, HTTP, IST, RadarError, Telegram, deliver, empty_state, parse_date
-from radar.sources import calendar_items, collect, parse_calendar, parse_portal, portal
+from radar.sources import calendar_event_url, calendar_items, collect, parse_calendar, parse_portal, portal
 
 
 def event(**changes):
@@ -171,6 +171,16 @@ class Tests(unittest.TestCase):
         self.assertEqual(parse_calendar(items[0]).price, 'unknown')
         with self.assertRaises(RadarError):
             calendar_items('<html>changed</html>')
+
+    def test_calendar_direct_event_links(self):
+        item = {'id': '1', 'title': 'Demo', 'start': '10/09/2026 10:00 AM',
+                'viewEventURL': 'https://calendar.zoho.com/zc/viewevent/example'}
+        self.assertEqual(parse_calendar(item).url, item['viewEventURL'])
+        item['viewEventURL'] = 'javascript:alert(1)'
+        item['url'] = 'https://example.org/register'
+        self.assertEqual(parse_calendar(item).url, item['url'])
+        item['url'] = 'http://example.org/insecure'
+        self.assertEqual(parse_calendar(item).url, 'https://www.t-hub.co/events-calendar')
 
     def test_calendar_javascript_hex_escapes(self):
         items = [{'id': '1', 'title': 'AI & Robotics', 'start': '10/09/2026 10:00 AM'}]
